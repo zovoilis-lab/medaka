@@ -21,7 +21,7 @@ def run_prediction(
     """Inference worker."""
     logger = medaka.common.get_named_logger('PWorker')
 
-    remainder_regions = list()
+    # start loading data
     loader = DataLoader(
         bam, regions, batch_size, batch_cache_size=4,
         feature_encoder=feature_encoder,
@@ -33,6 +33,7 @@ def run_prediction(
         "Running inference for {:.1f}M draft bases.".format(
             total_region_mbases))
 
+    remainder_regions = list()
     with medaka.datastore.DataStore(output, 'a') as ds:
         mbases_done = 0
         cache_size_log_interval = 5
@@ -40,7 +41,7 @@ def run_prediction(
         t0 = now()
         tlast = t0
         tcache = t0
-        for data, x_data in loader.batches():
+        for data, x_data in loader:
             class_probs = model.predict_on_batch(x_data)
             for sample, prob, feat in zip(data, class_probs, x_data):
                 # write out positions and predictions for later analysis
@@ -49,10 +50,10 @@ def run_prediction(
                     label_probs=prob, features=features)
                 ds.write_sample(new_sample)
 
-            # log loading of samples
+            # log loading of batches
             if now() - tcache > cache_size_log_interval:
-                logger.info("Samples in cache: {}.".format(
-                    loader.results.qsize()))
+                logger.info("Batches in cache: {}.".format(
+                    loader._batches.qsize()))
                 tcache = now()
             # calculate bases done taking into account overlap
             new_bases = 0
@@ -194,6 +195,10 @@ class DataLoader(object):
             bam_workers=4, **kwargs):
         """Initialise data loading.
 
+        Once constructed, iterating over this object will yield
+        tuples containing a list of `Samples`, and a stacked array
+        of the corresponding features.
+
         :param bam: input `.bam` file.
         :param regions: regions to process.
         :param batch_size: number samples in an inference batch.
@@ -214,8 +219,9 @@ class DataLoader(object):
         # try to load samples for one more batch than necessary to
         # maintain batch cache
         self.sample_cache_size = (batch_cache_size + 1) * batch_size
+        self._results = queue.Queue(maxsize=self.sample_cache_size)
+        self._batches = queue.Queue(maxsize=batch_cache_size)
         self.region_cache_size = 4
-        self.results = queue.Queue(maxsize=self.sample_cache_size)
         self.have_data = threading.Event()
         self.remainders = []
 
@@ -226,10 +232,29 @@ class DataLoader(object):
         self.thread.daemon = True
         self.thread.start()
         # loading of samples into batches
-        self._batches = queue.Queue(maxsize=batch_cache_size)
         self.bthread = threading.Thread(target=self._make_batches)
         self.bthread.daemon = True
         self.bthread.start()
+
+    def __iter__(self):
+        """Simply return self."""
+        return self
+    
+    def __next__(self):
+        """Generate batches of data for inference.
+
+        :yields: (list of `Samples`, ndarray of stacks features).
+        """
+        while True:
+            try:
+                batch = self._batches.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if batch is None:
+                    raise StopIteration
+                else:
+                    return batch
 
     def _fill_serial(self):
         # process one region at a time
@@ -237,7 +262,7 @@ class DataLoader(object):
             samples, remain = self._run_region(
                 self.bam, region, *self.args, **self.kwargs)
             for sample in samples:
-                self.results.put(sample)
+                self._results.put(sample)
             self.remainders.extend(remain)
         self.have_data.clear()
 
@@ -274,19 +299,19 @@ class DataLoader(object):
                         samples, remain = fut.result()
                         self.remainders.extend(remain)
                         for sample in samples:
-                            self.results.put(sample)
+                            self._results.put(sample)
                         done.append(kreg)
                 for kreg in done:
                     del futures[kreg]
                 # keep things flowing
                 if now() - t0 > cache_check_interval:
                     t0 = now()
-                    if self.results.qsize() < 0.5 * self.sample_cache_size:
+                    if self._results.qsize() < 0.5 * self.sample_cache_size:
                         self.logger.debug(
                             "Expanding region cache from {},".format(
                                 self.region_cache_size))
                         self.region_cache_size += 1
-                    elif self.results.qsize() > 0.9 * self.sample_cache_size:
+                    elif self._results.qsize() > 0.9 * self.sample_cache_size:
                         self.logger.debug(
                             "Reducing region cache from {},".format(
                                 self.region_cache_size))
@@ -299,7 +324,7 @@ class DataLoader(object):
                 samples, remain = fut.result()
                 self.remainders.extend(remain)
                 for sample in samples:
-                    self.results.put(sample)
+                    self._results.put(sample)
         # signal everything has been processed
         self.have_data.clear()
 
@@ -309,43 +334,23 @@ class DataLoader(object):
             bam, region, *args, **kwargs)
         return data_gen.samples, data_gen._quarantined
 
-    def __iter__(self):
-        """Simply return self."""
-        return self
-
-    def __next__(self):
+    def _samples(self):
         """Iterate over items in internal network input cache."""
         while self.have_data.is_set():
             try:
-                res = self.results.get(timeout=0.1)
+                res = self._results.get(timeout=0.1)
             except queue.Empty:
                 if not self.have_data.is_set():
                     break
             else:
-                return res
+                yield res
 
-        if not self.results.empty():
-            return self.results.get()
-        raise StopIteration
-
-    def batches(self):
-        """Generate batches of data for inference.
-
-        :yields: (list of `Samples`, ndarray of stacks features).
-        """
-        while True:
-            try:
-                batch = self._batches.get_nowait()
-            except queue.Empty:
-                pass
-            else:
-                if batch is None:
-                    return
-                else:
-                    yield batch
+        if not self._results.empty():
+            yield self._results.get()
+        return
 
     def _make_batches(self):
-        for data in medaka.common.grouper(self, self.batch_size):
+        for data in medaka.common.grouper(self._samples(), self.batch_size):
             batch = np.stack([x.features for x in data])
             while True:
                 try:
