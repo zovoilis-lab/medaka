@@ -23,10 +23,10 @@ def run_prediction(
 
     remainder_regions = list()
     loader = DataLoader(
-        4 * batch_size, bam, regions, feature_encoder,
+        bam, regions, batch_size, batch_cache_size=4,
+        feature_encoder=feature_encoder,
         chunk_len=chunk_len, chunk_overlap=chunk_ovlp,
         enable_chunking=enable_chunking)
-    batches = medaka.common.grouper(loader, batch_size)
 
     total_region_mbases = sum(r.size for r in regions) / 1e6
     logger.info(
@@ -40,13 +40,20 @@ def run_prediction(
         t0 = now()
         tlast = t0
         tcache = t0
-        for data in batches:
+        for data, x_data in loader.batches():
+            class_probs = model.predict_on_batch(x_data)
+            for sample, prob, feat in zip(data, class_probs, x_data):
+                # write out positions and predictions for later analysis
+                features = feat if save_features else None
+                new_sample = sample.amend(
+                    label_probs=prob, features=features)
+                ds.write_sample(new_sample)
+
+            # log loading of samples
             if now() - tcache > cache_size_log_interval:
                 logger.info("Samples in cache: {}.".format(
                     loader.results.qsize()))
                 tcache = now()
-            x_data = np.stack([x.features for x in data])
-            class_probs = model.predict_on_batch(x_data)
             # calculate bases done taking into account overlap
             new_bases = 0
             for x in data:
@@ -64,13 +71,6 @@ def run_prediction(
                 logger.info(msg.format(
                     mbases_done / total_region_mbases, mbases_done,
                     total_region_mbases, t1 - t0))
-
-            for sample, prob, feat in zip(data, class_probs, x_data):
-                # write out positions and predictions for later analysis
-                features = feat if save_features else None
-                new_sample = sample.amend(
-                    label_probs=prob, features=features)
-                ds.write_sample(new_sample)
 
     remainder_regions = loader.remainders
     logger.info("All done, {} remainder regions.".format(
@@ -189,34 +189,47 @@ def predict(args):
 class DataLoader(object):
     """Loading of data for inference."""
 
-    def __init__(self, sample_cache_size, bam, regions, *args, **kwargs):
+    def __init__(
+            self, bam, regions, batch_size, batch_cache_size=4,
+            bam_workers=4, **kwargs):
         """Initialise data loading.
 
-        :param sample_cache_size: maximum number of network inputs to
-            pre-load.
         :param bam: input `.bam` file.
         :param regions: regions to process.
-        :param args: position arguments to use when creating
-            `features.SampleGenerator` instances.
+        :param batch_size: number samples in an inference batch.
+        :param batch_cache_size: maximum number of inference batches
+            to preload.
+        :param bam_workers: number of worker threads for `.bam` reading.
         :param kwargs: keyword arguments to use when creating
             `features.SampleGenerator` instances.
         """
         self.logger = medaka.common.get_named_logger('DLoader')
-        self.sample_cache_size = sample_cache_size
-        self.region_cache_size = 4
         self.bam = bam
         self.regions = regions
-        self.args = args
+        self.batch_size = batch_size
+        self.batch_cache_size = batch_cache_size
+        self.bam_workers = bam_workers
         self.kwargs = kwargs
-        self.results = queue.Queue(maxsize=sample_cache_size)
+
+        # try to load samples for one more batch than necessary to
+        # maintain batch cache
+        self.sample_cache_size = (batch_cache_size + 1) * batch_size
+        self.region_cache_size = 4
+        self.results = queue.Queue(maxsize=self.sample_cache_size)
         self.have_data = threading.Event()
         self.remainders = []
 
         self.logger.info('Initializing data loader')
+        # loading of samples from regions
         self.have_data.set()
         self.thread = threading.Thread(target=self._fill_parallel)
         self.thread.daemon = True
         self.thread.start()
+        # loading of samples into batches
+        self._batches = queue.Queue(maxsize=batch_cache_size)
+        self.bthread = threading.Thread(target=self._make_batches)
+        self.bthread.daemon = True
+        self.bthread.start()
 
     def _fill_serial(self):
         # process one region at a time
@@ -238,7 +251,7 @@ class DataLoader(object):
         t0 = now()
         cache_check_interval = 3
         min_region_cache = 4
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=self.bam_workers) as executor:
             while True:
                 if submitted:
                     try:
@@ -250,7 +263,7 @@ class DataLoader(object):
                     self.logger.debug("Submitting {}.".format(submit_reg))
                     futures[str(submit_reg)] = executor.submit(
                         self._run_region, self.bam, submit_reg,
-                        *self.args, **self.kwargs)
+                        **self.kwargs)
                     submitted = True
                 else:
                     submitted = False
@@ -314,3 +327,31 @@ class DataLoader(object):
         if not self.results.empty():
             return self.results.get()
         raise StopIteration
+
+    def batches(self):
+        """Generate batches of data for inference.
+
+        :yields: (list of `Samples`, ndarray of stacks features).
+        """
+        while True:
+            try:
+                batch = self._batches.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if batch is None:
+                    return
+                else:
+                    yield batch
+
+    def _make_batches(self):
+        for data in medaka.common.grouper(self, self.batch_size):
+            batch = np.stack([x.features for x in data])
+            while True:
+                try:
+                    self._batches.put((data, batch))
+                except queue.Full:
+                    pass
+                else:
+                    break
+        self._batches.put(None)

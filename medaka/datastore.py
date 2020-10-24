@@ -1,4 +1,3 @@
-"""Storing of training and inference data to file."""
 from abc import ABC, abstractmethod
 from collections import defaultdict, OrderedDict
 from concurrent.futures import \
