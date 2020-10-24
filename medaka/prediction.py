@@ -239,7 +239,7 @@ class DataLoader(object):
     def __iter__(self):
         """Simply return self."""
         return self
- 
+
     def __next__(self):
         """Generate batches of data for inference.
 
