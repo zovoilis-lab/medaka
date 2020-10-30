@@ -428,8 +428,6 @@ class Sample(_Sample):
         start_2 = None
 
         for s2 in itertools.chain(sample_gen, (None,)):
-            s1_name = 'Unknown' if s1 is None else s1.name
-            s2_name = 'Unknown' if s2 is None else s2.name
             heuristic = False
 
             is_last_in_contig = False
@@ -443,7 +441,7 @@ class Sample(_Sample):
                 # skip s2 if it is contained within s1
                 if rel is Relationship.s2_within_s1:
                     logger.info('{} is contained within {}, skipping.'.format(
-                        s2_name, s1_name))
+                        s2.name, s1.name))
                     continue
                 elif rel is Relationship.forward_overlap:
                     end_1, start_2, _ = Sample.overlap_indices(
@@ -453,7 +451,7 @@ class Sample(_Sample):
                     end_1, start_2 = (None, None)
                     msg = '{} and {} cannot be concatenated as there is ' + \
                         'no overlap and they do not abut.'
-                    logger.info(msg.format(s1_name, s2_name))
+                    logger.info(msg.format(s1.name, s2.name))
                 else:
                     try:
                         end_1, start_2, heuristic = \
