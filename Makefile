@@ -83,7 +83,7 @@ $(BINCACHEDIR)/racon: | $(BINCACHEDIR)
 	@echo GCC is $(GCC)
 	if [ ! -e submodules/racon-v${RACONVER}.tar.gz ]; then \
 	  cd submodules; \
-	  git clone https://github.com/zovoilis-lab/racon.git
+	  git clone https://github.com/zovoilis-lab/racon.git \
 	  #curl -L -o racon-v${RACONVER}.tar.gz https://github.com/lbcb-sci/racon/releases/download/${RACONVER}/racon-v${RACONVER}.tar.gz; \
 	  #tar -xzf racon-v${RACONVER}.tar.gz; \
 	fi
