@@ -57,9 +57,9 @@ MINIMAPVER=2.17
 $(BINCACHEDIR)/minimap2: | $(BINCACHEDIR)
 	@echo Compiling $(@F)
 	cd submodules; \
-		curl -L -o minimap2-${MINIMAPVER}.tar.bz2 https://github.com/zovoilis-lab/minimap2/releases/download/v${MINIMAPVER}/minimap2-${MINIMAPVER}.tar.bz2; \
-		tar -xjf minimap2-${MINIMAPVER}.tar.bz2; \
-	    rm -rf minimap2-${MINIMAPVER}.tar.bz2
+		curl -L -o minimap2-${MINIMAPVER}.tar.gz https://github.com/zovoilis-lab/minimap2/releases/download/v${MINIMAPVER}/minimap2-${MINIMAPVER}.tar.gz; \
+		tar -xjf minimap2-${MINIMAPVER}.tar.gz; \
+	    rm -rf minimap2-${MINIMAPVER}.tar.gz
 	cd submodules/minimap2-${MINIMAPVER} && make
 	cp submodules/minimap2-${MINIMAPVER}/minimap2 $@
 
