@@ -89,7 +89,7 @@ $(BINCACHEDIR)/racon: | $(BINCACHEDIR)
 	cd submodules/racon-v${RACONVER}; \
 		rm -rf build; \
 		mkdir build; \
-		${SEDI} 's/march=native/mcpu=native -mtune=native/g' submodules/racon-v${RACONVER}/CMakeLists.txt; \
+		${SEDI} 's/march=native/mcpu=native -mtune=native/g' CMakeLists.txt; \
 		cd build; \
 		cmake -DCMAKE_BUILD_TYPE=Release ..; \
 		make;
