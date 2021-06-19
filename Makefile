@@ -58,7 +58,7 @@ $(BINCACHEDIR)/minimap2: | $(BINCACHEDIR)
 	@echo Compiling $(@F)
 	cd submodules; \
 		#curl -L -o minimap2-${MINIMAPVER}.tar.gz https://github.com/zovoilis-lab/minimap2/releases/download/v${MINIMAPVER}/minimap2-${MINIMAPVER}.tar.gz; \
-		git clone https://github.com/zovoilis-lab/minimap2.git
+		git clone https://github.com/zovoilis-lab/minimap2.git;
 		#tar -xvf minimap2-${MINIMAPVER}.tar.gz; \
 	    #rm -rf minimap2-${MINIMAPVER}.tar.gz
 	cd submodules/minimap2  && make sse2only=1
