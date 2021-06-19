@@ -83,13 +83,13 @@ $(BINCACHEDIR)/racon: | $(BINCACHEDIR)
 	@echo GCC is $(GCC)
 	if [ ! -e submodules/racon-v${RACONVER}.tar.gz ]; then \
 	  cd submodules; \
-	  curl -L -o racon-v${RACONVER}.tar.gz https://github.com/lbcb-sci/racon/releases/download/${RACONVER}/racon-v${RACONVER}.tar.gz; \
-	  tar -xzf racon-v${RACONVER}.tar.gz; \
+	  git clone https://github.com/zovoilis-lab/racon.git
+	  #curl -L -o racon-v${RACONVER}.tar.gz https://github.com/lbcb-sci/racon/releases/download/${RACONVER}/racon-v${RACONVER}.tar.gz; \
+	  #tar -xzf racon-v${RACONVER}.tar.gz; \
 	fi
-	cd submodules/racon-v${RACONVER}; \
+	cd submodules/racon; \
 		rm -rf build; \
 		mkdir build; \
-		${SEDI} 's/march=native/mcpu=native -mtune=native/g' CMakeLists.txt; \
 		cd build; \
 		cmake -DCMAKE_BUILD_TYPE=Release -spoa_optimize_for_native=OFF ..; \
 		make;
