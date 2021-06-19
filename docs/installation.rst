@@ -45,7 +45,7 @@ We recommend using medaka within a virtual environment, viz.:
     Using this method requires the user to provide several binaries:
 
     `samtools <https://github.com/samtools/samtools>`_,
-    `minimap2 <https://github.com/lh3/minimap2>`_,
+    `minimap2 <https://github.com/zovoilis-lab/minimap2.git>`_,
     `tabix <https://github.com/samtools/htslib>`_,
     `bgzip <https://github.com/samtools/htslib>`_, and
     `bcftools <https://github.com/samtools/bcftools>`_,
