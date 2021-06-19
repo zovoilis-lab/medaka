@@ -91,7 +91,7 @@ $(BINCACHEDIR)/racon: | $(BINCACHEDIR)
 		mkdir build; \
 		${SEDI} 's/march=native/mcpu=native -mtune=native/g' CMakeLists.txt; \
 		cd build; \
-		cmake -DCMAKE_BUILD_TYPE=Release ..; \
+		cmake -DCMAKE_BUILD_TYPE=Release -spoa_optimize_for_native=OFF ..; \
 		make;
 	cp submodules/racon-v${RACONVER}/build/bin/racon $@
 
