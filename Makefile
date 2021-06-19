@@ -93,7 +93,7 @@ $(BINCACHEDIR)/racon: | $(BINCACHEDIR)
 		cd build; \
 		cmake -DCMAKE_BUILD_TYPE=Release -spoa_optimize_for_native=OFF ..; \
 		make;
-	cp submodules/racon-v${RACONVER}/build/bin/racon $@
+	cp submodules/racon/build/bin/racon $@
 
 
 $(BINCACHEDIR)/vcf2fasta: | $(BINCACHEDIR)
